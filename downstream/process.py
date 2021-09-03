@@ -337,9 +337,62 @@ def print_beta_diversity(samples, filename):
     plt.savefig(filename, bbox_inches="tight")
 
 
+def amount_of_resistome_change(samples):
+    control_before, control_after, std2_before, std2_after, std3_before, std3_after = [], [], [], [], [], []
+    for s in samples:
+        all_reads = -1
+        with open("outputs/" + s.id + ".linecounts") as f:
+            for l in f:
+                all_reads = int(l.rstrip()) / 4
+        resistome_reads = sum(s.resistome.values())
+
+        perc = resistome_reads / all_reads * 100
+
+        if perc > 8:
+            print(s.id)
+            continue
+
+        if s.id.endswith("Control_T1"):
+            control_before.append(perc)
+        elif s.id.endswith("Control_T2"):
+            control_after.append(perc)
+        elif s.id.endswith("STD2_T1"):
+            std2_before.append(perc)
+        elif s.id.endswith("STD2_T2"):
+            std2_after.append(perc)
+        elif s.id.endswith("STD3_T1"):
+            std3_before.append(perc)
+        else:
+            std3_after.append(perc)
+
+    fig, ax = plt.subplots(3, 2, sharex=True, sharey=True, figsize=(4, 6))
+
+    ax[0, 0].violinplot(control_before, showmeans=True, showextrema=False)
+    ax[1, 0].violinplot(std2_before, showmeans=True, showextrema=False)
+    ax[2, 0].violinplot(std3_before, showmeans=True, showextrema=False)
+
+    ax[0, 1].violinplot(control_after, showmeans=True, showextrema=False)
+    ax[1, 1].violinplot(std2_after, showmeans=True, showextrema=False)
+    ax[2, 1].violinplot(std3_after, showmeans=True, showextrema=False)
+
+    fig.suptitle("Percentage of reads mapped to resistome")
+
+    ax[1, 0].set_xticks([])
+
+    ax[2, 0].set_xlabel("Before")
+    ax[2, 1].set_xlabel("After")
+
+    ax[0, 0].set_ylabel("Control")
+    ax[1, 0].set_ylabel("STD2")
+    ax[2, 0].set_ylabel("STD3")
+
+    plt.savefig("outputs/resistome_change.png")
+
+
 if __name__ == "__main__":
     patients = read_patients_from_csv("outputs/metadata.csv")
 
+    amount_of_resistome_change(get_all_samples(patients))
     print_abundance_table(get_all_samples(patients), "outputs/tables/abundances.csv")
     print_resistome_table(get_all_samples(patients), "outputs/tables/resistomes.csv")
     print_beta_diversity(get_all_samples(patients), "outputs/pictures/beta_diversity.png")

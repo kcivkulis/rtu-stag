@@ -110,7 +110,93 @@ def extract_amrplusplus_reports():
                                  os.path.join(target_dir, str(sample_id) + ".krona"))
 
 
+def create_amrplusplus_krona_condensed():
+    control_before, control_after, std2_before, std2_after, std3_before, std3_after = {}, {}, {}, {}, {}, {}
+    c_control_before, c_control_after, c_std2_before, c_std2_after, c_std3_before, c_std3_after = 0, 0, 0, 0, 0, 0
+
+    for filename in os.listdir("amrplusplus/"):
+        input = "amrplusplus/" + filename
+        sid = filename.rstrip(".csv")
+        total = 0
+        with open(input) as i:
+            first = True
+            for line in i:
+                if first:
+                    first = False
+                    continue
+                entries = line.rstrip().split(',')
+                count = entries[1].rstrip(".0")
+                full_name = entries[0].split('|')
+                if full_name[-1] == "RequiresSNPConfirmation":
+                    full_name.pop()
+                full_name.append(full_name[0])
+                full_name.pop(0)
+                total += int(count)
+
+        with open(input) as i:
+            first = True
+            for line in i:
+                if first:
+                    first = False
+                    continue
+                entries = line.rstrip().split(',')
+                count = entries[1].rstrip(".0")
+                full_name = entries[0].split('|')
+                if full_name[-1] == "RequiresSNPConfirmation":
+                    full_name.pop()
+                full_name.append(full_name[0])
+                full_name.pop(0)
+                x = "\t".join(full_name)
+                p = float(count) / float(total)
+
+                def a(res, x, p):
+                    if x in res:
+                        res[x] += p
+                    else:
+                        res[x] = p
+
+                if sid.endswith("Control_T1"):
+                    a(control_before, x, p)
+                elif sid.endswith("Control_T2"):
+                    a(control_after, x, p)
+                elif sid.endswith("STD2_T1"):
+                    a(std2_before, x, p)
+                elif sid.endswith("STD2_T2"):
+                    a(std2_after, x, p)
+                elif sid.endswith("STD3_T1"):
+                    a(std3_before, x, p)
+                elif sid.endswith("STD3_T2"):
+                    a(std3_after, x, p)
+
+        if sid.endswith("Control_T1"):
+            c_control_before += 1
+        elif sid.endswith("Control_T2"):
+            c_control_after += 1
+        elif sid.endswith("STD2_T1"):
+            c_std2_before += 1
+        elif sid.endswith("STD2_T2"):
+            c_std2_after += 1
+        elif sid.endswith("STD3_T1"):
+            c_std3_before += 1
+        elif sid.endswith("STD3_T2"):
+            c_std3_after += 1
+
+    for resistome, cnt, name in [(control_before, c_control_before, "control_before"),
+                                 (control_after, c_control_after, "control_after"),
+                                 (std2_before, c_std2_before, "std2_before"),
+                                 (std2_after, c_std2_after, "std2_after"),
+                                 (std3_before, c_std3_before, "std3_before"),
+                                 (std3_after, c_std3_after, "std3_after")]:
+        s = 0
+        with open(name + ".krona", "w") as o:
+            for v in resistome:
+                print(str(resistome[v] / cnt) + "\t" + v, file=o)
+                s += (resistome[v] / cnt)
+        print(name, cnt, s)
+
+
 if __name__ == "__main__":
+    create_amrplusplus_krona_condensed()
     print_metadata("outputs/metadata.csv")
     create_bracken_reports()
     extract_amrplusplus_reports()
