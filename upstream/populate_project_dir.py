@@ -1,3 +1,5 @@
+#!/bin/python3
+
 import argparse
 import pathlib
 import os
@@ -13,6 +15,13 @@ def copy_subdir(sample_dir, subdir, dest_dir):
     print("Warning: Cannot find subdirectory " + subdir + " in " + sample_dir)
 
 
+def find_any(sample_dir, sub):
+    for run in os.listdir(sample_dir):
+        if sub in os.listdir(os.path.join(sample_dir, run)):
+            return os.path.join(sample_dir, run, sub)
+    return None
+
+
 def extract_sample(sample_dir, dest_dir):
     if not os.path.exists(sample_dir):
         print("Error: sample " + sample_dir + " doesn't exist")
@@ -22,6 +31,7 @@ def extract_sample(sample_dir, dest_dir):
     os.mkdir(dest_dir)
     copy_subdir(sample_dir, "kraken2", dest_dir)
     copy_subdir(sample_dir, "amrplusplus", dest_dir)
+    shutil.copyfile(find_any(sample_dir, "preprocessing_read_counts.txt"), os.path.join(dest_dir, "preprocessing_read_counts.txt"))
 
 
 if __name__ == "__main__":
