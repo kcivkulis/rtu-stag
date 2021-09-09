@@ -1,10 +1,13 @@
 import os
-import shutil
 import subprocess
+import json
 
 
 outputs_dir = os.path.join(os.getenv("GROUP"), "projects_real", "ERAF184")
-bracken_db_path = os.path.join(os.getenv("GROUP"), "databases", "full_ref_bafp", "database150mers.kmer_distrib")
+bracken_db_path = os.path.join(os.getenv("GROUP"),
+                               "databases",
+                               "full_ref_bafp",
+                               "database150mers.kmer_distrib")
 
 
 def get_all_sample_ids():
@@ -12,9 +15,9 @@ def get_all_sample_ids():
         return [s.rstrip() for s in f]
 
 
-def print_metadata(output_filename):
+def print_metadata(all_sample_ids, output_filename):
     m = {}
-    for sample_id in get_all_sample_ids():
+    for sample_id in all_sample_ids:
         patient_id, treatment, time = sample_id.split('_')
         if patient_id not in m:
             m[patient_id] = [treatment, "", ""]
@@ -25,9 +28,14 @@ def print_metadata(output_filename):
         else:
             raise RuntimeError("Wrong time in sample name")
     with open(output_filename, "w") as f:
-        print("patient_id", "treatment", "sample_id_before", "sample_id_after", sep = ',', file = f)
+        print("patient_id",
+              "treatment",
+              "sample_id_before",
+              "sample_id_after",
+              sep=',',
+              file=f)
         for patient_id in m:
-            print(patient_id, *(m[patient_id]), sep = ',', file = f)
+            print(patient_id, *(m[patient_id]), sep=',', file=f)
 
 
 def get_kraken_filename(sample_id):
@@ -42,161 +50,115 @@ def get_kraken_filename(sample_id):
     return None
 
 
-def get_amrplusplus_filename(sample_id):
-    sample_subdir = os.path.join(outputs_dir, sample_id)
-    amrplusplus_dir = os.path.join(sample_subdir, "amrplusplus", "RunResistome")
-    if os.path.isdir(amrplusplus_dir):
-        for f in os.listdir(amrplusplus_dir):
-            if f.endswith(".mechanism.tsv"):
-                return os.path.join(amrplusplus_dir, f)
-        raise AssertionError("Can't find .mechanism.tsv file im amrplusplus subdirectory")
-    return None
-
-
-def create_amrplusplus_krona(input, output):
-    with open(input) as i:
-        with open(output, "w") as o:
-            first = True
-            for line in i:
-                if first:
-                    first = False
-                    continue
-                entries = line.rstrip().split(',')
-                count = entries[1].rstrip(".0")
-                full_name = entries[0].split('|')
-                if full_name[-1] == "RequiresSNPConfirmation":
-                    full_name.pop()
-                full_name.append(full_name[0])
-                full_name.pop(0)
-                print(count + "\t" + "\t".join(full_name), file=o)
-
-
 def run_bracken(kraken_filename, output_name, kreport_name, level):
     proc = subprocess.run(["../../Bracken/src/est_abundance.py",
-        "-i", kraken_filename,
-        "-k", bracken_db_path,
-        "-o", output_name,
-        "-t", "1",
-        "-l", level,
-        "--out-report", kreport_name])
+                           "-i", kraken_filename,
+                           "-k", bracken_db_path,
+                           "-o", output_name,
+                           "-t", "1",
+                           "-l", level,
+                           "--out-report", kreport_name])
     if proc.returncode != 0:
         raise RuntimeError("Bracken failed")
 
 
-def create_bracken_reports():
-    os.mkdir("outputs/bracken_output")
-    for sample_id in get_all_sample_ids():
-        kraken_filename = get_kraken_filename(sample_id)
-        if kraken_filename == None:
-            print(sample_id, " missing kraken2, skipping sample")
-            continue
+def create_bracken_report(sample_id, bracken_output, kreport_output):
+    kraken_filename = get_kraken_filename(sample_id)
+    if kraken_filename is None:
+        print(sample_id, " missing kraken2, skipping sample")
+        return
 
-        output_name = os.path.join("outputs", "bracken_output", str(sample_id) + ".bracken")
-        kreport_name = os.path.join("outputs", "bracken_output", str(sample_id) + ".kreport")
-        run_bracken(kraken_filename, output_name, kreport_name, "G")
+    output_name = os.path.join("outputs", "bracken_output", bracken_output)
+    kreport_name = os.path.join("outputs", "bracken_output", kreport_output)
+    run_bracken(kraken_filename, output_name, kreport_name, "G")
 
 
-def extract_amrplusplus_reports():
-    target_dir = os.path.join("outputs", "amrplusplus_report")
-    os.mkdir(target_dir)
-    for sample_id in get_all_sample_ids():
-        amrplusplus_filename = get_amrplusplus_filename(sample_id)
-        if amrplusplus_filename == None:
-            print(sample_id, " missing amrplusplus, skipping sample")
-            continue
-        shutil.copyfile(amrplusplus_filename, os.path.join(target_dir, str(sample_id) + ".tsv"))
-        amrplusplus_base = os.path.dirname(os.path.dirname(amrplusplus_filename))
-        create_amrplusplus_krona(os.path.join(amrplusplus_base, "ResistomeResults", "AMR_analytics_matrix.csv"),
-                                 os.path.join(target_dir, str(sample_id) + ".krona"))
+def parse_kreport(filename):
+    level_map = {'R': 0, 'D': 1, 'K': 2, 'P': 3, 'C': 4, 'O': 5, 'F': 6, 'G': 7}
+
+    def is_higher(s1, s2):
+        if level_map[s1[0]] != level_map[s2[0]]:
+            return level_map[s1[0]] < level_map[s2[0]]
+        return s1[1:] < s2[1:]
+
+    full_name = []
+    result = []
+
+    with open(filename) as f:
+        for line in f:
+            entries = line.rstrip().split('\t')
+            level = entries[3].lstrip(). rstrip()
+
+            while full_name and not is_higher(full_name[-1][0], level):
+                full_name.pop()
+
+            full_name.append((level, entries[5].lstrip().rstrip()))
+
+            if level == "G":
+                result.append(full_name + [entries[1]])
+    return result
 
 
-def create_amrplusplus_krona_condensed():
-    control_before, control_after, std2_before, std2_after, std3_before, std3_after = {}, {}, {}, {}, {}, {}
-    c_control_before, c_control_after, c_std2_before, c_std2_after, c_std3_before, c_std3_after = 0, 0, 0, 0, 0, 0
+def get_amrplusplus_filename(sample_id):
+    f = os.path.join(outputs_dir,
+                     sample_id,
+                     "amrplusplus",
+                     "ResistomeResults",
+                     "AMR_analytics_matrix.csv")
+    assert(os.path.isfile(f))
+    return f
 
-    for filename in os.listdir("amrplusplus/"):
-        input = "amrplusplus/" + filename
-        sid = filename.rstrip(".csv")
-        total = 0
-        with open(input) as i:
-            first = True
-            for line in i:
-                if first:
-                    first = False
-                    continue
-                entries = line.rstrip().split(',')
-                count = entries[1].rstrip(".0")
-                full_name = entries[0].split('|')
-                if full_name[-1] == "RequiresSNPConfirmation":
-                    full_name.pop()
-                full_name.append(full_name[0])
-                full_name.pop(0)
-                total += int(count)
 
-        with open(input) as i:
-            first = True
-            for line in i:
-                if first:
-                    first = False
-                    continue
-                entries = line.rstrip().split(',')
-                count = entries[1].rstrip(".0")
-                full_name = entries[0].split('|')
-                if full_name[-1] == "RequiresSNPConfirmation":
-                    full_name.pop()
-                full_name.append(full_name[0])
-                full_name.pop(0)
-                x = "\t".join(full_name)
-                p = float(count) / float(total)
+def parse_amrplusplus(filename):
+    result = []
+    with open(filename) as f:
+        first = True
+        for line in f:
+            if first:
+                first = False
+                continue
+            entries = line.rstrip().split(',')
+            count = entries[1].rstrip(".0")
+            full_name = entries[0].split('|')
+            if full_name[-1] == "RequiresSNPConfirmation":
+                full_name.pop()
+            full_name.append(full_name[0])
+            full_name.pop(0)
+            result.append(full_name + [count])
+    return result
 
-                def a(res, x, p):
-                    if x in res:
-                        res[x] += p
-                    else:
-                        res[x] = p
 
-                if sid.endswith("Control_T1"):
-                    a(control_before, x, p)
-                elif sid.endswith("Control_T2"):
-                    a(control_after, x, p)
-                elif sid.endswith("STD2_T1"):
-                    a(std2_before, x, p)
-                elif sid.endswith("STD2_T2"):
-                    a(std2_after, x, p)
-                elif sid.endswith("STD3_T1"):
-                    a(std3_before, x, p)
-                elif sid.endswith("STD3_T2"):
-                    a(std3_after, x, p)
+def get_read_count(sample_id):
+    p = os.path.join(outputs_dir, sample_id, "preprocessing_read_counts.txt")
+    with open(p) as f:
+        first = True
+        for line in f:
+            if first:
+                first = False
+                continue
+            return line.rstrip().split("\t")[3]
 
-        if sid.endswith("Control_T1"):
-            c_control_before += 1
-        elif sid.endswith("Control_T2"):
-            c_control_after += 1
-        elif sid.endswith("STD2_T1"):
-            c_std2_before += 1
-        elif sid.endswith("STD2_T2"):
-            c_std2_after += 1
-        elif sid.endswith("STD3_T1"):
-            c_std3_before += 1
-        elif sid.endswith("STD3_T2"):
-            c_std3_after += 1
 
-    for resistome, cnt, name in [(control_before, c_control_before, "control_before"),
-                                 (control_after, c_control_after, "control_after"),
-                                 (std2_before, c_std2_before, "std2_before"),
-                                 (std2_after, c_std2_after, "std2_after"),
-                                 (std3_before, c_std3_before, "std3_before"),
-                                 (std3_after, c_std3_after, "std3_after")]:
-        s = 0
-        with open(name + ".krona", "w") as o:
-            for v in resistome:
-                print(str(resistome[v] / cnt) + "\t" + v, file=o)
-                s += (resistome[v] / cnt)
-        print(name, cnt, s)
+def create_json_output(sample_id, kreport_name, amrplusplus_name, output):
+    kreport_result = parse_kreport(kreport_name)
+    amrplusplus_result = parse_amrplusplus(amrplusplus_name)
+    result = {"taxonomy": kreport_result,
+              "resistome": amrplusplus_result,
+              "read_count": get_read_count(sample_id)}
+    with open(output, "w") as f:
+        print(json.dumps(result, sort_keys=True, indent=4), file=f)
 
 
 if __name__ == "__main__":
-    create_amrplusplus_krona_condensed()
-    print_metadata("outputs/metadata.csv")
-    create_bracken_reports()
-    extract_amrplusplus_reports()
+    all_sample_ids = get_all_sample_ids()
+
+    os.mkdir("outputs/bracken_output")
+    os.mkdir("outputs/samples")
+    print_metadata(all_sample_ids, "outputs/metadata.csv")
+
+    for id in all_sample_ids:
+        create_bracken_report(id, id + ".bracken", id + ".kreport")
+        create_json_output(id,
+                           "outputs/bracken_output/" + id + ".kreport",
+                           get_amrplusplus_filename(id),
+                           "outputs/samples/" + id + ".json")
