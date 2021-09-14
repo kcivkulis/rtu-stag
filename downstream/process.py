@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy.spatial.distance import pdist
 from scipy.cluster.hierarchy import linkage, dendrogram
+from scipy.stats import wilcoxon
 from skbio.diversity import alpha
 
 
@@ -327,10 +328,49 @@ def get_patient_table(patients):
     return df
 
 
+def statistics_for_groups(patients):
+    def amount_of_penicillin_binding_protein(sample):
+        total = 0
+        for r in sample.resistome:
+            if r[2] == "Penicillin_binding_protein":
+                total += sample.resistome[r]
+        return total / sample.read_count
+
+    def relative_amount_of_penicillin_binding_protein(sample):
+        total = 0
+        for r in sample.resistome:
+            if r[2] == "Penicillin_binding_protein":
+                total += sample.resistome[r]
+        return total / sum(sample.resistome.values())
+
+    functions = [(amount_of_penicillin_binding_protein, "Amount of penicillin binding protein"),
+                 (relative_amount_of_penicillin_binding_protein, "Relative amount of penicillin binding protein")]
+
+    for func, func_name in functions:
+        print("Calculating paired wilcoxon for:", func_name)
+
+        for treatment in ["Control", "STD2", "STD3"]:
+            print("Group:", treatment)
+            x = []
+            y = []
+            for p in patients:
+                if p.treatment != treatment:
+                    continue
+                if p.sample_before is None or p.sample_after is None:
+                    continue
+                x.append(func(p.sample_before))
+                y.append(func(p.sample_after))
+
+            print("Before: {:7f}".format(np.mean(x)), "After: {:7f}".format(np.mean(y)), wilcoxon(x, y))
+        print()
+
+
 if __name__ == "__main__":
     all_patients = read_patient_data("outputs/metadata.csv")
     samples = get_all_samples(all_patients)
     sorted_samples = sort_samples(samples)
+
+    statistics_for_groups(all_patients)
 
     print_taxonomy_table(samples, "outputs/tables/taxonomy.csv")
     print_resistome_table(samples, "outputs/tables/resistome.csv")
