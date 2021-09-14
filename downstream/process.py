@@ -7,6 +7,7 @@ from scipy.spatial.distance import pdist
 from scipy.cluster.hierarchy import linkage, dendrogram
 from scipy.stats import wilcoxon
 from skbio.diversity import alpha
+import seaborn as sns
 
 
 # Utils
@@ -127,32 +128,37 @@ def sort_samples(samples):
 
 # Drawings
 
-def draw_resistome_amount(samples, filename):
-    def f(samples):
-        return list(filter(lambda x: x < 0.08,
-                    map(lambda s: sum(s.resistome.values()) / s.read_count,
-                        samples)))
+def draw_resistome_amount(patients, filename):
+    def f(sample):
+        return sum(sample.resistome.values()) / sample.read_count * 100
 
-    fig, ax = plt.subplots(3, 2, sharex=True, sharey=True, figsize=(4, 6))
+    def create_table():
+        treatment, time, value = [], [], []
+        for patient in patients:
+            if patient.sample_before is not None and patient.sample_after is not None:
+                if f(patient.sample_before) > 8 or f(patient.sample_after) > 8:
+                    print("Skipping", patient.id, "because before =", f(patient.sample_before), "and after =", f(patient.sample_after))
+                    continue
+                t = patient.treatment
+                if t == "STD2":
+                    t = "Amoxicillinum & Clarithromycinum"
+                elif t == "STD3":
+                    t = "Amoxicillinum"
+                treatment.append(t)
+                treatment.append(t)
+                time.append("Before")
+                time.append("After")
+                value.append(f(patient.sample_before))
+                value.append(f(patient.sample_after))
+        return pd.DataFrame({"treatment": treatment, "time": time, "value": value})
 
-    for i, treatment in enumerate(["Control", "STD2", "STD3"]):
-        for j, time in enumerate(["before", "after"]):
-            ax[i, j].violinplot(f(samples[treatment][time]),
-                                showmeans=True,
-                                showextrema=False)
-
+    fig, ax = plt.subplots(figsize=(10, 3))
+    sns.violinplot(x="treatment", y="value", hue="time", data=create_table(), palette="muted", split=True, linewidth=0.5, inner="stick", ax=ax)
     fig.suptitle("Percentage of reads mapped to resistome")
-
-    ax[1, 0].set_xticks([])
-
-    ax[2, 0].set_xlabel("Before")
-    ax[2, 1].set_xlabel("After")
-
-    ax[0, 0].set_ylabel("Control")
-    ax[1, 0].set_ylabel("STD2")
-    ax[2, 0].set_ylabel("STD3")
-
-    plt.savefig(filename)
+    ax.set_ylabel("Mapped reads, %")
+    ax.set_xlabel("")
+    ax.get_legend().set_title("")
+    fig.savefig(filename, bbox_inches="tight")
 
 
 def draw_beta_diversity(samples, filename):
@@ -334,17 +340,21 @@ def statistics_for_groups(patients):
         for r in sample.resistome:
             if r[2] == "Penicillin_binding_protein":
                 total += sample.resistome[r]
-        return total / sample.read_count
+        return total / sample.read_count * 100
 
     def relative_amount_of_penicillin_binding_protein(sample):
         total = 0
         for r in sample.resistome:
             if r[2] == "Penicillin_binding_protein":
                 total += sample.resistome[r]
-        return total / sum(sample.resistome.values())
+        return total / sum(sample.resistome.values()) * 100
 
-    functions = [(amount_of_penicillin_binding_protein, "Amount of penicillin binding protein"),
-                 (relative_amount_of_penicillin_binding_protein, "Relative amount of penicillin binding protein")]
+    def relative_amount_of_amr_reads(sample):
+        return sum(sample.resistome.values()) / sample.read_count * 100
+
+    functions = [(amount_of_penicillin_binding_protein, "Amount of penicillin binding protein relative to all reads, %"),
+                 (relative_amount_of_penicillin_binding_protein, "Amount of penicillin binding protein relative all resistome reads, %"),
+                 (relative_amount_of_amr_reads, "AMR count relative to all reads, %")]
 
     for func, func_name in functions:
         print("Calculating paired wilcoxon for:", func_name)
@@ -357,6 +367,8 @@ def statistics_for_groups(patients):
                 if p.treatment != treatment:
                     continue
                 if p.sample_before is None or p.sample_after is None:
+                    continue
+                if func == relative_amount_of_amr_reads and (func(p.sample_before) > 8 or func(p.sample_after) > 8):
                     continue
                 x.append(func(p.sample_before))
                 y.append(func(p.sample_after))
@@ -383,5 +395,5 @@ if __name__ == "__main__":
     get_patient_table(all_patients).to_csv("outputs/tables/patients.csv")
 
     draw_enterotypes(sorted_samples, significant_otus, "outputs/pictures/enterotypes.svg")
-    draw_resistome_amount(sorted_samples, "outputs/pictures/resistome_change.png")
+    draw_resistome_amount(all_patients, "outputs/pictures/resistome_change.svg")
     draw_beta_diversity(samples, "outputs/pictures/beta_diversity.png")
