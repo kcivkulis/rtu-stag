@@ -128,37 +128,54 @@ def sort_samples(samples):
 
 # Drawings
 
+def draw_violin_plots(patients, f, skip_condition, text_if_skipped, suptitle, ylabel, filename):
+    treatment, time, value = [], [], []
+    for patient in patients:
+        if patient.sample_before is None or patient.sample_after is None:
+            print("Skipping", patient.id, ": missing samples")
+            continue
+        if skip_condition(patient.sample_before):
+            print("Skipping", patient.id, " (before):", text_if_skipped(patient.sample_before))
+            continue
+        if skip_condition(patient.sample_after):
+            print("Skipping", patient.id, " (after):", text_if_skipped(patient.sample_after))
+        t = patient.treatment
+        if t == "STD2":
+            t = "Amoxicillinum & Clarithromycinum"
+        elif t == "STD3":
+            t = "Amoxicillinum"
+        treatment.append(t)
+        treatment.append(t)
+        time.append("Before")
+        time.append("After")
+        value.append(f(patient.sample_before))
+        value.append(f(patient.sample_after))
+
+    df = pd.DataFrame({"treatment": treatment, "time": time, "value": value})
+
+    fig, ax = plt.subplots(figsize=(10, 3))
+    sns.violinplot(x="treatment", y="value", hue="time", data=df, palette="muted", split=True, linewidth=0.5, inner="stick", ax=ax)
+    fig.suptitle(suptitle)
+    ax.set_ylabel(ylabel)
+    ax.set_xlabel("")
+    ax.get_legend().set_title("")
+    fig.savefig(filename, bbox_inches="tight")
+
+
 def draw_resistome_amount(patients, filename):
     def f(sample):
         return sum(sample.resistome.values()) / sample.read_count * 100
 
-    def create_table():
-        treatment, time, value = [], [], []
-        for patient in patients:
-            if patient.sample_before is not None and patient.sample_after is not None:
-                if f(patient.sample_before) > 8 or f(patient.sample_after) > 8:
-                    print("Skipping", patient.id, "because before =", f(patient.sample_before), "and after =", f(patient.sample_after))
-                    continue
-                t = patient.treatment
-                if t == "STD2":
-                    t = "Amoxicillinum & Clarithromycinum"
-                elif t == "STD3":
-                    t = "Amoxicillinum"
-                treatment.append(t)
-                treatment.append(t)
-                time.append("Before")
-                time.append("After")
-                value.append(f(patient.sample_before))
-                value.append(f(patient.sample_after))
-        return pd.DataFrame({"treatment": treatment, "time": time, "value": value})
+    def skip_condition(sample):
+        return f(sample) > 8
 
-    fig, ax = plt.subplots(figsize=(10, 3))
-    sns.violinplot(x="treatment", y="value", hue="time", data=create_table(), palette="muted", split=True, linewidth=0.5, inner="stick", ax=ax)
-    fig.suptitle("Percentage of reads mapped to resistome")
-    ax.set_ylabel("Mapped reads, %")
-    ax.set_xlabel("")
-    ax.get_legend().set_title("")
-    fig.savefig(filename, bbox_inches="tight")
+    def text_if_skipped(sample):
+        return "Resistome is suspiciously large ({:2.2f})".format(f(sample))
+
+    suptitle = "Percentage of reads mapped to resistome"
+    ylabel = "Mapped reads, %"
+
+    draw_violin_plots(patients, f, skip_condition, text_if_skipped, suptitle, ylabel, filename)
 
 
 def draw_beta_diversity(samples, filename):
@@ -368,8 +385,11 @@ def statistics_for_groups(patients):
                     continue
                 if p.sample_before is None or p.sample_after is None:
                     continue
-                if func == relative_amount_of_amr_reads and (func(p.sample_before) > 8 or func(p.sample_after) > 8):
-                    continue
+                if func == relative_amount_of_amr_reads:
+                    if func(p.sample_before) > 8 or func(p.sample_after) > 8:
+                        continue
+                    if func(p.sample_after) > 1.3:
+                        print(p.id)
                 x.append(func(p.sample_before))
                 y.append(func(p.sample_after))
 
