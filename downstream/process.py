@@ -50,6 +50,33 @@ def get_all_sample_keys(samples, attr):
 # End of utils
 
 
+def parse_amrplusplus_name(s):
+    name = s.split('|')
+    if name[-1] == "RequiresSNPConfirmation":
+        name.pop()
+    name.append(name[0])
+    name.pop(0)
+    return tuple(name)
+
+
+amr_gene_lengths = {}
+def get_amr_gene_lengths():
+    filename = "megares_full_database_v2.00.fasta"
+    with open(filename) as f:
+        name = None
+        length = 0
+        for line in f:
+            line = line.rstrip()
+            if line[0] == '>':
+                if name is not None:
+                    amr_gene_lengths[name] = length
+                length = 0
+                name = parse_amrplusplus_name(line[1:])
+            else:
+                length += len(line)
+        amr_gene_lengths[name] = length
+
+
 def parse_lists(lists, list_parser):
     result = {}
     for list in lists:
@@ -162,6 +189,26 @@ def draw_violin_plots(patients, f, skip_condition, text_if_skipped, suptitle, yl
     fig.savefig(filename, bbox_inches="tight")
 
 
+def draw_changes_before_after(patients, f, suptitle, ylabel, filename):
+    fig, axs = plt.subplots(1, 3, sharey=True, figsize=(8, 15))
+    for ax, treatment in zip(axs, ["Control", "STD2", "STD3"]):
+        for p in patients:
+            if p.treatment != treatment:
+                continue
+            if p.sample_before is None or p.sample_after is None:
+                print("Skipping", p.id, ": missing samples")
+                continue
+            ax.plot([0, 1], [f(p.sample_before), f(p.sample_after)], color="black", marker="o", linewidth=0.2, markersize=0.5)
+
+    for ax, treatment in zip(axs, ["Control", "Amoxicillinum & Clarithromycinum", "Amoxicillinum"]):
+        ax.set_xticklabels([])
+        ax.set_xticks([])
+        ax.set_xlabel(treatment)
+    fig.suptitle(suptitle)
+    axs[0].set_ylabel(ylabel)
+    fig.savefig(filename, bbox_inches="tight")
+
+
 def draw_resistome_amount(patients, filename):
     def f(sample):
         return sum(sample.resistome.values()) / sample.read_count * 100
@@ -176,6 +223,23 @@ def draw_resistome_amount(patients, filename):
     ylabel = "Mapped reads, %"
 
     draw_violin_plots(patients, f, skip_condition, text_if_skipped, suptitle, ylabel, filename)
+    draw_changes_before_after(patients, f, suptitle, ylabel, "test.svg")
+
+
+def draw_observed_amr_amount_single(patients, prefix_length, level_name, filename_prefix):
+    def f(sample):
+        return len({x[:prefix_length] for x in sample.resistome})
+
+    suptitle = "Number of different observed AMR " + level_name
+    ylabel = "Count"
+
+    draw_violin_plots(patients, f, lambda sample: False, lambda sample: "", suptitle, ylabel, filename_prefix + "_violin.svg")
+    draw_changes_before_after(patients, f, suptitle, ylabel, filename_prefix + "_change.svg")
+
+
+def draw_observed_amr_amount(patients, filename_prefix):
+    for prefix_count, level_name in [(1, "types"), (2, "classes"), (3, "mechanisms"), (4, "genes")]:
+        draw_observed_amr_amount_single(patients, prefix_count, level_name, filename_prefix + "_" + level_name)
 
 
 def draw_beta_diversity(samples, filename):
@@ -402,6 +466,8 @@ if __name__ == "__main__":
     samples = get_all_samples(all_patients)
     sorted_samples = sort_samples(samples)
 
+    get_amr_gene_lengths()
+
     statistics_for_groups(all_patients)
 
     print_taxonomy_table(samples, "outputs/tables/taxonomy.csv")
@@ -416,4 +482,5 @@ if __name__ == "__main__":
 
     draw_enterotypes(sorted_samples, significant_otus, "outputs/pictures/enterotypes.svg")
     draw_resistome_amount(all_patients, "outputs/pictures/resistome_change.svg")
+    draw_observed_amr_amount(all_patients, "outputs/pictures/observed_amr")
     draw_beta_diversity(samples, "outputs/pictures/beta_diversity.png")
