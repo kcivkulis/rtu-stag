@@ -50,6 +50,8 @@ def get_all_sample_keys(samples, attr):
 # End of utils
 
 
+# AMRplusplus
+
 def parse_amrplusplus_name(s):
     name = s.split('|')
     if name[-1] == "RequiresSNPConfirmation":
@@ -59,8 +61,8 @@ def parse_amrplusplus_name(s):
     return tuple(name)
 
 
-amr_gene_lengths = {}
 def get_amr_gene_lengths():
+    amr_gene_lengths = {}
     filename = "megares_full_database_v2.00.fasta"
     with open(filename) as f:
         name = None
@@ -75,7 +77,10 @@ def get_amr_gene_lengths():
             else:
                 length += len(line)
         amr_gene_lengths[name] = length
+    return amr_gene_lengths
 
+
+# END
 
 def parse_lists(lists, list_parser):
     result = {}
@@ -301,6 +306,60 @@ def draw_enterotypes(samples, significant_otus, filename):
                          "Taxonomy",
                          filename)
 
+
+def draw_resistome_profile(samples):
+    amr_lengths = get_amr_gene_lengths()
+
+    def read_count_to_relative_abundance(sample):
+        resistome = sample.resistome
+        total_reads = sum(resistome[amr] for amr in resistome)
+        m = {}
+        for amr in resistome:
+            m[amr] = resistome[amr] / (amr_lengths[amr] / 1e3 * total_reads / 1e6)
+        s = sum(m[amr] for amr in m)
+        for amr in resistome:
+            m[amr] /= s
+
+        return m
+
+    abundance = map_sorted_samples(read_count_to_relative_abundance, samples)
+
+    avg_profile = {}
+
+    for group in ["Control", "STD2", "STD3"]:
+        avg_profile[group] = {}
+
+        for time in ["before", "after"]:
+            n = len(abundance[group][time])
+            m = {}
+            for sample in abundance[group][time]:
+                for amr in abundance[group][time][sample]:
+                    if amr not in m:
+                        m[amr] = 0
+                    m[amr] += abundance[group][time][sample][amr]
+            for amr in m:
+                m[amr] /= n
+
+            avg_profile[group][time] = m
+
+    fig, ax = plt.subplots(figsize=(5, 20))
+
+    for group in ["Control", "STD2", "STD3"]:
+        for time in ["before", "after"]:
+            new_map = {}
+            for amr in avg_profile[group][time]:
+                if amr[:3] not in new_map:
+                    new_map[amr[:3]] = 0
+                new_map[amr[:3]] += avg_profile[group][time][amr]
+
+            print(new_map)
+
+            print(new_map.keys())
+
+            ax.barh(list(map(lambda s: s[-1], new_map.keys())), list(new_map.values()))
+            plt.show()
+
+
 # For tables
 
 
@@ -466,7 +525,7 @@ if __name__ == "__main__":
     samples = get_all_samples(all_patients)
     sorted_samples = sort_samples(samples)
 
-    get_amr_gene_lengths()
+    draw_resistome_profile(sorted_samples)
 
     statistics_for_groups(all_patients)
 
