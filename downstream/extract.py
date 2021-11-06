@@ -70,11 +70,11 @@ def create_bracken_report(sample_id, bracken_output, kreport_output):
 
     output_name = os.path.join("outputs", "bracken_output", bracken_output)
     kreport_name = os.path.join("outputs", "bracken_output", kreport_output)
-    run_bracken(kraken_filename, output_name, kreport_name, "G")
+    run_bracken(kraken_filename, output_name, kreport_name, "S")
 
 
 def parse_kreport(filename):
-    level_map = {'R': 0, 'D': 1, 'K': 2, 'P': 3, 'C': 4, 'O': 5, 'F': 6, 'G': 7}
+    level_map = {'R': 0, 'D': 1, 'K': 2, 'P': 3, 'C': 4, 'O': 5, 'F': 6, 'G': 7, 'S': 8}
 
     def is_higher(s1, s2):
         if level_map[s1[0]] != level_map[s2[0]]:
@@ -94,7 +94,7 @@ def parse_kreport(filename):
 
             full_name.append((level, entries[5].lstrip().rstrip()))
 
-            if level == "G":
+            if level == "S":
                 result.append(full_name + [entries[1]])
     return result
 
