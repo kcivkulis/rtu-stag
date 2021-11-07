@@ -214,7 +214,7 @@ def draw_changes_before_after(patients, f, suptitle, ylabel, filename):
     fig.savefig(filename, bbox_inches="tight")
 
 
-def draw_resistome_amount(patients, filename):
+def draw_and_print_resistome_amount(patients, filename, filename_changes, filename_percentages):
     def f(sample):
         return sum(sample.resistome.values()) / sample.read_count * 100
 
@@ -228,7 +228,30 @@ def draw_resistome_amount(patients, filename):
     ylabel = "Mapped reads, %"
 
     draw_violin_plots(patients, f, skip_condition, text_if_skipped, suptitle, ylabel, filename)
-    draw_changes_before_after(patients, f, suptitle, ylabel, "test.svg")
+    draw_changes_before_after(patients, f, suptitle, ylabel, filename_changes)
+
+    before, after = {}, {}
+    before["Control"] = []
+    before["STD2"] = []
+    before["STD3"] = []
+    after["Control"] = []
+    after["STD2"] = []
+    after["STD3"] = []
+
+    for p in patients:
+        if p.sample_before:
+            before[p.treatment].append(f(p.sample_before))
+        if p.sample_after:
+            after[p.treatment].append(f(p.sample_after))
+
+    with open(filename_percentages, "w") as out:
+        for t in ["Control", "STD2", "STD3"]:
+            print(t + " before", file=out)
+            print(*before[t], file=out)
+            print("mean:", np.mean(before[t]), "stddev:", np.std(before[t]), file=out)
+            print(t + " after", file=out)
+            print(*after[t], file=out)
+            print("mean:", np.mean(after[t]), "stddev:", np.std(after[t]), file=out)
 
 
 def draw_observed_amr_amount_single(patients, prefix_length, level_name, filename_prefix):
@@ -540,6 +563,6 @@ if __name__ == "__main__":
     get_patient_table(all_patients).to_csv("outputs/tables/patients.csv")
 
     draw_enterotypes(sorted_samples, significant_otus, "outputs/pictures/enterotypes.svg")
-    draw_resistome_amount(all_patients, "outputs/pictures/resistome_change.svg")
+    draw_and_print_resistome_amount(all_patients, "outputs/pictures/resistome_change.svg", "outputs/pictures/resistome_change_2.svg", "outputs/tables/resistome_percents.txt")
     draw_observed_amr_amount(all_patients, "outputs/pictures/observed_amr")
     draw_beta_diversity(samples, "outputs/pictures/beta_diversity.png")
