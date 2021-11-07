@@ -543,6 +543,54 @@ def statistics_for_groups(patients):
         print()
 
 
+# Rarefaction
+
+def rarefy(v, f):
+    X = []
+    Y = []
+    step = 5
+    sizes = [sum(v) * f // 100 for f in range(step, 101, step)]
+    arr = []
+    for i, x in enumerate(v):
+        arr += [i] * x
+    np.random.shuffle(arr)
+
+    cur = [0] * len(v)
+
+    j = 0
+    for i, x in enumerate(arr):
+        cur[x] += 1
+        if i + 1 == sizes[j]:
+            X.append(sum(cur))
+            Y.append(f(cur))
+            j += 1
+    return X, Y
+
+
+def draw_rarefaction(samples, filename, filename_text):
+    fig, ax = plt.subplots(figsize=(15, 15))
+    ax.grid()
+    ax.ticklabel_format(axis='x', style='plain')
+    ax.xaxis.set_tick_params(rotation=90)
+    ax.set_xlabel("Read count")
+    ax.set_ylabel("Observed species")
+
+    with open(filename_text, "w") as out:
+        for s in samples:
+            x, y = rarefy(list(s.taxonomy.values()), alpha.observed_otus)
+            ax.plot(x, y, linewidth=0.12)
+            ax.text(x[-1], y[-1] - 2, s.id, fontsize=2)
+            print(s.id, file=out)
+            for a, b in zip(x, y):
+                print(a, b, file=out)
+
+    ax.set_xlim(0, None)
+    ax.set_ylim(0, None)
+
+    plt.savefig(filename, bbox_inches='tight')
+    plt.close(fig)
+
+
 if __name__ == "__main__":
     all_patients = read_patient_data("outputs/metadata.csv")
     samples = get_all_samples(all_patients)
@@ -566,3 +614,5 @@ if __name__ == "__main__":
     draw_and_print_resistome_amount(all_patients, "outputs/pictures/resistome_change.svg", "outputs/pictures/resistome_change_2.svg", "outputs/tables/resistome_percents.txt")
     draw_observed_amr_amount(all_patients, "outputs/pictures/observed_amr")
     draw_beta_diversity(samples, "outputs/pictures/beta_diversity.png")
+
+    draw_rarefaction(samples, "outputs/pictures/taxonomy_rarefaction.svg", "outputs/tables/taxonomy_rarefaction.txt") # This is slow

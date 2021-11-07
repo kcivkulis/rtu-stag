@@ -128,7 +128,7 @@ def parse_amrplusplus(filename):
     return result
 
 
-def get_read_count(sample_id):
+def get_read_count(sample_id):  # After QC
     p = os.path.join(outputs_dir, sample_id, "preprocessing_read_counts.txt")
     with open(p) as f:
         first = True
